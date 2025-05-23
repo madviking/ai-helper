@@ -14,8 +14,8 @@ from src.adapters.anthropic import AnthropicAdapter
 from src.cost_tracker import CostTracker
 from src.tools import calculator
 
-import google.generativeai as genai # Reverted to standard import for Gemini SDK
-from google.generativeai import types as genai_types
+from google import genai as google_genai_module # Alias for the 'google.genai' module
+from google.genai import types as genai_types
 from anthropic import Anthropic, APIError # Import Anthropic for spec and APIError
 from anthropic.types import Message, ToolUseBlock, TextBlock, Usage as AnthropicUsage
 
@@ -115,24 +115,25 @@ def create_mock_gemini_response(text_content: str = None, function_calls_data: l
         parts.append(genai_types.Part(text=text_content))
     if function_calls_data:
         for fc_data in function_calls_data: 
-            parts.append(genai_types.Part(function_call=genai_types.FunctionCall(name=fc_data["name"], args=fc_data["args"])))
+            parts.append(genai_types.Part(function_call=genai_types.FunctionCall(name=fc_data["name"], args=fc_data["args"]))) # Ensure args is a dict if FunctionCall expects it
             
     mock_response = MagicMock(spec=genai_types.GenerateContentResponse)
-    mock_response.parts = parts
-    
+    # Ensure 'parts' is a list. If function_calls_data is None, parts might be empty.
+    mock_response.parts = parts if parts else [] # Handle case where parts might be empty
+
+    # Configure usage_metadata
+    mock_usage_meta = MagicMock(spec=genai_types.UsageMetadata)
     if usage_metadata_data:
-        mock_response.usage_metadata = genai_types.UsageMetadata(
-            prompt_token_count=usage_metadata_data.get("prompt_token_count",0),
-            candidates_token_count=usage_metadata_data.get("candidates_token_count",0),
-            total_token_count=usage_metadata_data.get("total_token_count",0)
-        )
+        mock_usage_meta.prompt_token_count = usage_metadata_data.get("prompt_token_count", 0)
+        mock_usage_meta.candidates_token_count = usage_metadata_data.get("candidates_token_count", 0)
+        mock_usage_meta.total_token_count = usage_metadata_data.get("total_token_count", 0)
     else:
-        mock_response.usage_metadata = MagicMock(spec=genai_types.UsageMetadata)
-        mock_response.usage_metadata.prompt_token_count = 0
-        mock_response.usage_metadata.candidates_token_count = 0
-        mock_response.usage_metadata.total_token_count = 0
+        mock_usage_meta.prompt_token_count = 0
+        mock_usage_meta.candidates_token_count = 0
+        mock_usage_meta.total_token_count = 0
+    mock_response.usage_metadata = mock_usage_meta
         
-    mock_response.prompt_feedback = MagicMock()
+    mock_response.prompt_feedback = MagicMock() # Mock prompt_feedback as well
     mock_response.prompt_feedback.block_reason = None
     return mock_response
 
@@ -143,45 +144,51 @@ class TestGoogleAdapterIntegration(unittest.TestCase):
         self.mock_getenv = self.getenv_patcher.start()
         self.addCleanup(self.getenv_patcher.stop)
         
-        # Mock the client instance that GoogleAdapter will create
-        self.mock_gemini_client_instance = MagicMock(spec=genai.GenerativeModel)
-        self.generative_model_patcher = patch('google.generativeai.GenerativeModel', return_value=self.mock_gemini_client_instance)
-        self.mock_generative_model_constructor = self.generative_model_patcher.start()
-        self.addCleanup(self.generative_model_patcher.stop)
+        # Mock the Client instance that GoogleAdapter will create
+        self.mock_google_client_instance = MagicMock(spec=google_genai_module.Client)
+        # Mock the nested 'models.generate_content' path
+        self.mock_google_client_instance.models = MagicMock()
+        self.mock_google_client_instance.models.generate_content = MagicMock()
+
+        # Patch 'google.genai.Client' as this is what GoogleAdapter instantiates
+        self.client_constructor_patcher = patch('google.genai.Client', return_value=self.mock_google_client_instance)
+        self.mock_client_constructor = self.client_constructor_patcher.start()
+        self.addCleanup(self.client_constructor_patcher.stop)
         
         self.adapter = GoogleAdapter(model_name="gemini-1.5-flash", cost_tracker=self.cost_tracker)
-        # self.adapter.client is now self.mock_gemini_client_instance
-        # So, for tests, we set expectations on self.mock_gemini_client_instance.generate_content
+        # self.adapter.client is now self.mock_google_client_instance
+        # self.adapter.client.models.generate_content is the mock we'll set expectations on
 
     def test_process_simple_prompt_google(self):
         mock_response_text = "Hello from mock Gemini!"
         mock_usage = {"prompt_token_count": 12, "candidates_token_count": 8, "total_token_count": 20}
-        # Set the return value on the instance that GoogleAdapter.client refers to
-        self.adapter.client.generate_content.return_value = create_mock_gemini_response(text_content=mock_response_text, usage_metadata_data=mock_usage)
+        # Set the return value on the generate_content method of the mocked client's models attribute
+        self.mock_google_client_instance.models.generate_content.return_value = create_mock_gemini_response(text_content=mock_response_text, usage_metadata_data=mock_usage)
         
         input_data = {"messages": [{"role": "user", "content": "Hello Gemini"}]}
         result = self.adapter.process(input_data)
         
-        self.adapter.client.generate_content.assert_called_once()
-        called_args = self.adapter.client.generate_content.call_args[1]
+        self.mock_google_client_instance.models.generate_content.assert_called_once()
+        called_args = self.mock_google_client_instance.models.generate_content.call_args[1]
+        self.assertEqual(called_args["model"], "gemini-1.5-flash")
         self.assertEqual(called_args["contents"][0]["parts"][0].text, "Hello Gemini")
         self.assertEqual(result["content"]["text"], mock_response_text)
 
     def test_process_with_tool_call_google(self):
         tool_name = "get_weather"; tool_args_dict = {"location": "London"}
-        mock_fc_data = [{"name": tool_name, "args": tool_args_dict}]
+        mock_fc_data = [{"name": tool_name, "args": tool_args_dict}] # args should be a dict
         mock_usage1 = {"prompt_token_count": 25, "candidates_token_count": 15, "total_token_count": 40}
-        self.adapter.client.generate_content.return_value = create_mock_gemini_response(function_calls_data=mock_fc_data, usage_metadata_data=mock_usage1)
+        self.mock_google_client_instance.models.generate_content.return_value = create_mock_gemini_response(function_calls_data=mock_fc_data, usage_metadata_data=mock_usage1)
         
         tool_schema = {"type": "function", "function": {"name": tool_name, "description": "Gets weather", "parameters": {"type": "object", "properties": {"location": {"type": "string"}}, "required": ["location"]}}}
         input_data1 = {"messages": [{"role": "user", "content": "Weather in London?"}], "tools_details": [tool_schema]}
         result1 = self.adapter.process(input_data1)
         self.assertEqual(json.loads(result1["content"]["tool_calls"][0]["function"]["arguments"]), tool_args_dict)
         
-        self.adapter.client.generate_content.reset_mock()
+        self.mock_google_client_instance.models.generate_content.reset_mock() # Reset mock for the second call
         final_text = "Weather is sunny."
         mock_usage2 = {"prompt_token_count": 50, "candidates_token_count": 10, "total_token_count": 60}
-        self.adapter.client.generate_content.return_value = create_mock_gemini_response(text_content=final_text, usage_metadata_data=mock_usage2)
+        self.mock_google_client_instance.models.generate_content.return_value = create_mock_gemini_response(text_content=final_text, usage_metadata_data=mock_usage2)
         
         input_data2 = {"messages": [{"role": "user", "content": "Weather in London?"}, {"role": "assistant", "tool_calls": result1["content"]["tool_calls"]}, {"role": "tool", "name": tool_name, "content": '{"temp": "15C"}'}], "tools_details": [tool_schema]}
         result2 = self.adapter.process(input_data2)
@@ -202,27 +209,35 @@ class TestAnthropicAdapterIntegration(unittest.TestCase):
         self.addCleanup(self.getenv_patcher.stop)
 
         # Mock the client instance that AnthropicAdapter will create
-        self.mock_anthropic_client_instance = MagicMock(spec=Anthropic)
-        self.anthropic_constructor_patcher = patch('anthropic.Anthropic', return_value=self.mock_anthropic_client_instance)
+        self.mock_anthropic_client_instance = MagicMock() # Basic MagicMock
+
+        # Explicitly create the 'messages' attribute as a MagicMock
+        self.mock_anthropic_client_instance.messages = MagicMock()
+        # Set the 'create' method on 'messages' to a MagicMock. Its return_value will be set in each test.
+        self.mock_anthropic_client_instance.messages.create = MagicMock()
+
+        # Patch where Anthropic is looked up by the adapter
+        self.anthropic_constructor_patcher = patch('src.adapters.anthropic.Anthropic', return_value=self.mock_anthropic_client_instance)
         self.mock_anthropic_constructor = self.anthropic_constructor_patcher.start()
         self.addCleanup(self.anthropic_constructor_patcher.stop)
         
         self.adapter = AnthropicAdapter(model_name="claude-3-haiku-20240307", cost_tracker=self.cost_tracker)
-        # self.adapter.client is now self.mock_anthropic_client_instance
+        # self.adapter.client is self.mock_anthropic_client_instance
+        # self.adapter.client.messages.create is self.mock_anthropic_client_instance.messages.create
 
     def test_process_simple_prompt_anthropic(self):
         mock_response_text = "Hello from mock Anthropic!"
         mock_usage = {"input_tokens": 10, "output_tokens": 7}
-        # Set return_value on the messages.create method of the mocked client instance
-        self.adapter.client.messages.create.return_value = create_mock_anthropic_message(
+        # Set return_value on the explicitly mocked messages.create method
+        self.mock_anthropic_client_instance.messages.create.return_value = create_mock_anthropic_message(
             content_blocks=[TextBlock(type="text", text=mock_response_text)], 
             usage_data=mock_usage
         )
         input_data = {"messages": [{"role": "user", "content": "Hello Anthropic"}]}
         result = self.adapter.process(input_data)
         
-        self.adapter.client.messages.create.assert_called_once()
-        called_args = self.adapter.client.messages.create.call_args[1]
+        self.mock_anthropic_client_instance.messages.create.assert_called_once()
+        called_args = self.mock_anthropic_client_instance.messages.create.call_args[1]
         self.assertEqual(called_args["messages"][0]["content"][0]["text"], "Hello Anthropic")
         self.assertEqual(result["content"]["text"], mock_response_text)
 
@@ -230,7 +245,7 @@ class TestAnthropicAdapterIntegration(unittest.TestCase):
         tool_use_id = "tooluse_123abc"; tool_name = "get_user_info"; tool_input = {"user_id": "123"}
         mock_content_blocks1 = [ToolUseBlock(type="tool_use", id=tool_use_id, name=tool_name, input=tool_input)]
         mock_usage1 = {"input_tokens": 30, "output_tokens": 15}
-        self.adapter.client.messages.create.return_value = create_mock_anthropic_message(
+        self.mock_anthropic_client_instance.messages.create.return_value = create_mock_anthropic_message(
             content_blocks=mock_content_blocks1, usage_data=mock_usage1, stop_reason="tool_use"
         )
         tool_schema = {"type": "function", "function": {"name": tool_name, "description": "Gets user info", "parameters": {"type": "object", "properties": {"user_id": {"type": "string"}}, "required": ["user_id"]}}}
@@ -238,10 +253,10 @@ class TestAnthropicAdapterIntegration(unittest.TestCase):
         result1 = self.adapter.process(input_data1)
         self.assertEqual(json.loads(result1["content"]["tool_calls"][0]["function"]["arguments"]), tool_input)
 
-        self.adapter.client.messages.create.reset_mock()
+        self.mock_anthropic_client_instance.messages.create.reset_mock() # Reset the explicit mock
         final_text = "User 123 is John Doe."
         mock_usage2 = {"input_tokens": 50, "output_tokens": 10}
-        self.adapter.client.messages.create.return_value = create_mock_anthropic_message(
+        self.mock_anthropic_client_instance.messages.create.return_value = create_mock_anthropic_message(
             content_blocks=[TextBlock(type="text", text=final_text)], usage_data=mock_usage2
         )
         input_data2 = {

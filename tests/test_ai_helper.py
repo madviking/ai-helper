@@ -62,6 +62,20 @@ class MockAdapterForAskTests(BaseAdapter):
 class TestAiHelper(unittest.TestCase):
     def setUp(self):
         self.cost_tracker = MagicMock(spec=CostTracker)
+        # Set a dummy API key for tests if the adapter initialization requires it
+        os.environ["OPENAI_API_KEY"] = "test_api_key"
+        os.environ["GOOGLE_GEMINI_API_KEY"] = "test_google_key" # For GoogleAdapter tests
+        os.environ["ANTHROPIC_API_KEY"] = "test_anthropic_key" # For AnthropicAdapter tests
+        # OPENROUTER_API_KEY is usually needed for OpenRouterAdapter, add if tests fail
+
+    def tearDown(self):
+        # Clean up environment variables
+        if "OPENAI_API_KEY" in os.environ:
+            del os.environ["OPENAI_API_KEY"]
+        if "GOOGLE_GEMINI_API_KEY" in os.environ:
+            del os.environ["GOOGLE_GEMINI_API_KEY"]
+        if "ANTHROPIC_API_KEY" in os.environ:
+            del os.environ["ANTHROPIC_API_KEY"]
 
     # Adapter Initialization Tests (Integration-style: testing real adapter instantiation)
     def test_ai_helper_creation_openai(self):

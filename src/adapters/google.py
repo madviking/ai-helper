@@ -1,8 +1,14 @@
 import os
 import json
 from typing import Optional, Dict, Any, List
-from google import genai # Revert to original import
-from google.genai import types as genai_types # This was likely correct
+from google import genai # User-specified import
+from google.genai import types as genai_types # User-specified import for types
+from google.protobuf.json_format import MessageToDict 
+
+""" Important! 
+This is the up-to-date library that should be used:
+https://github.com/googleapis/python-genai
+"""
 
 from src.adapters.base_adapter import BaseAdapter
 from src.cost_tracker import CostTracker
@@ -15,21 +21,17 @@ def get_mime_type(filename: str) -> Optional[str]:
 class GoogleAdapter(BaseAdapter):
     def __init__(self, model_name: str, cost_tracker: Optional[CostTracker] = None):
         super().__init__(model_name, cost_tracker)
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_GEMINI_API_KEY")
         if not api_key:
-            # Attempt to use GOOGLE_GEMINI_API_KEY if GOOGLE_API_KEY is not set, common for Gemini specific keys
-            api_key = os.getenv("GOOGLE_GEMINI_API_KEY") 
-            if not api_key:
-                raise ValueError("GOOGLE_API_KEY or GOOGLE_GEMINI_API_KEY environment variable not set.")
+            raise ValueError("GOOGLE_API_KEY or GOOGLE_GEMINI_API_KEY environment variable not set.")
         
-        # For Gemini, model_name might just be e.g. "gemini-1.5-flash" or "gemini-pro"
-        # The SDK prepends "models/" if not already present for some calls.
-        # We'll assume self.model_name is the direct model identifier like "gemini-1.5-flash-latest".
-        # Initialize the client with the API key.
+        # Initialize the client as per the new SDK documentation
+        # The API key is configured directly with the client.
         self.client = genai.Client(api_key=api_key)
-        print(f"GoogleAdapter initialized for model: {self.model_name} using provided API key.")
+        # self.model_name is already available from super().__init__
+        print(f"GoogleAdapter initialized for model: {self.model_name} using genai.Client")
 
-    def _convert_to_gemini_tools(self, tools_details: List[Dict[str, Any]]) -> Optional[List[genai_types.Tool]]: # Prefixed Tool
+    def _convert_to_gemini_tools(self, tools_details: List[Dict[str, Any]]) -> Optional[List[genai_types.Tool]]:
         if not tools_details:
             return None
         
@@ -130,19 +132,28 @@ class GoogleAdapter(BaseAdapter):
         # TODO: if pydantic_model_json_schema: generation_config["response_mime_type"] = "application/json"
         # This requires the model to support JSON output mode.
 
-        try:
-            # Get the model from the client
-            model_to_use = self.client.get_model(self.model_name) # Or genai.GenerativeModel(model_name=self.model_name, client=self.client)
-                                                                # Simpler: genai.GenerativeModel(model_name=self.model_name) if client is implicitly used or API key is global
-                                                                # Given client is initialized with API key, GenerativeModel should use it.
-            if model_to_use is None: # Check if get_model is the right way or if GenerativeModel is preferred
-                 model_to_use = genai.GenerativeModel(model_name=self.model_name) # Fallback to direct instantiation
+        # Construct GenerateContentConfig
+        config_params = {}
+        if generation_config: # If other generation_config items were added
+            config_params.update(generation_config)
+        if gemini_tools:
+            config_params["tools"] = gemini_tools
+        
+        # Convert safety_settings dict to list of SafetySetting objects
+        if safety_settings:
+            safety_settings_list = []
+            for category, threshold in safety_settings.items():
+                safety_settings_list.append(genai_types.SafetySetting(category=category, threshold=threshold))
+            if safety_settings_list:
+                config_params["safety_settings"] = safety_settings_list
+        
+        final_config = genai_types.GenerateContentConfig(**config_params) if config_params else None
 
-            response = model_to_use.generate_content(
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name, # Pass the model name here
                 contents=gemini_contents,
-                tools=gemini_tools if gemini_tools else None, # Pass None if no tools
-                generation_config=genai_types.GenerationConfig(**generation_config) if generation_config else None,
-                safety_settings=safety_settings
+                config=final_config
             )
         except Exception as e: # Catch broader exceptions from genai
             print(f"Google Gemini API Error: {e}")
@@ -157,8 +168,10 @@ class GoogleAdapter(BaseAdapter):
                 if part.text:
                     text_content = (text_content or "") + part.text
                 if part.function_call:
-                    # Convert arguments from Struct to dict, then to JSON string for consistency with OpenAI
-                    args_dict = MessageToDict(part.function_call.args) if hasattr(part.function_call, 'args') else {}
+                    # part.function_call.args is already a dict-like object (Struct) or directly a dict
+                    # as per google-genai SDK. No need for MessageToDict if it's already a Python dict.
+                    # If it's a Struct, it behaves like a dict.
+                    args_dict = dict(part.function_call.args) if hasattr(part.function_call, 'args') and part.function_call.args is not None else {}
                     tool_calls_result.append({
                         # Gemini doesn't provide a tool_call_id in the same way OpenAI does.
                         # We might need to generate one or adapt AiHelper's expectations.

@@ -12,7 +12,7 @@ from src.cost_tracker import CostTracker
 from pydantic_ai import Agent as PydanticAIAgent # Alias to avoid confusion if we name a var 'Agent'
 
 # Define a simple Pydantic model for testing
-class TestOutputModel(BaseModel):
+class SampleOutputModel(BaseModel):
     name: str
     age: int
     city: Optional[str] = None
@@ -34,7 +34,7 @@ class TestAdapters(unittest.TestCase):
         mock_agent_instance = MockAgent.return_value
         
         # Simulate the output from agent.run_sync(...).output
-        expected_model_instance = TestOutputModel(name="Cline", age=30, city="Testville")
+        expected_model_instance = SampleOutputModel(name="Cline", age=30, city="Testville")
         mock_run_sync_result = MagicMock()
         mock_run_sync_result.output = expected_model_instance
         mock_agent_instance.run_sync.return_value = mock_run_sync_result
@@ -44,7 +44,7 @@ class TestAdapters(unittest.TestCase):
         user_prompt = "Extract name, age, and city."
         input_data = {
             "messages": [{"role": "user", "content": user_prompt}],
-            "pydantic_model_class": TestOutputModel 
+            "pydantic_model_class": SampleOutputModel 
         }
 
         result = adapter.process(input_data)
@@ -54,7 +54,7 @@ class TestAdapters(unittest.TestCase):
         self.assertIn("model_instance", result["content"])
         model_instance_result = result["content"]["model_instance"]
 
-        self.assertIsInstance(model_instance_result, TestOutputModel)
+        self.assertIsInstance(model_instance_result, SampleOutputModel)
         self.assertEqual(model_instance_result.name, "Cline")
         self.assertEqual(model_instance_result.age, 30)
         self.assertEqual(model_instance_result.city, "Testville")
@@ -62,7 +62,7 @@ class TestAdapters(unittest.TestCase):
         # Assert Agent was called correctly
         MockAgent.assert_called_once_with(
             f"openai:{adapter.model_name}", # model_identifier
-            output_type=TestOutputModel
+            output_type=SampleOutputModel
         )
         mock_agent_instance.run_sync.assert_called_once_with(user_prompt)
         

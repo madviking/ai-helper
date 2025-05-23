@@ -43,3 +43,12 @@ Wall time:
 - **[prompt]** Needed several prompts, including pasting pydanticai examples and their own toolkit's initialization instructions.
   - **[cost]** $1.8
 
+- **[prompt]** please read the README.md. Let's continue with the implementation. 
+1) Pytests should run without errors
+2) python -m example --- this should display example of ACTUAL api call to all providers + tool calling + file processing
+3) cost tracker should download the model pricing from openrouter and use that in the calculations
+4) cost tracker should save the files with totals, llm model specific spend and pydantic model specific spend
+5) adapters should return a pydantic model. I suggest we create a base model where we put cost tracking as a separate pydantic submodel. If all pydantic models extend from this base class, we can have all runtime info available through the models. 
+6) Fill calculation etc. could be done there also
+- **[prompt]** stopped couple of times to ask for examples from PydanticAI documentation and genai toolkit. Provided raw copy+paste of the examples.
+  - **[cost]** $2.5

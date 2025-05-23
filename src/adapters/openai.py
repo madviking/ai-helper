@@ -104,54 +104,63 @@ class OpenAIAdapter(BaseAdapter):
                 # or construct a single prompt string from the last user message.
                 # The example `agent.run_sync('Where does "hello world" come from?')` suggests a single string.
                 
-                # Extract the last user message content as the prompt for the Agent.
-                # This is a simplification; a more robust solution might concatenate messages
-                # or require pydantic-ai's Agent to handle a list of messages.
-                prompt_for_agent = "Extract information." # Default prompt
-                if openai_messages:
-                    # Find the last user message, or the first if only one.
-                    # PydanticAI Agent might take the 'messages' kwarg.
-                    # Let's assume it takes a simple prompt string for `run_sync` based on the example.
-                    last_user_message_content = ""
-                    for msg in reversed(openai_messages):
-                        if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                            last_user_message_content = msg["content"]
-                            break
-                    if last_user_message_content:
-                         prompt_for_agent = last_user_message_content
-                    elif isinstance(openai_messages[0].get("content"), str) : # Fallback to first message if no user message or complex content
-                        prompt_for_agent = openai_messages[0]["content"]
-
-
-                # The OpenAI example for pydantic-ai shows passing a `model` instance of `OpenAIResponsesModel`
-                # and `model_settings` to the Agent.
-                # from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
-                # model_settings = OpenAIResponsesModelSettings(...)
-                # model = OpenAIResponsesModel(self.model_name) # Pass model name string
-                # agent = Agent(model=model, model_settings=model_settings, output_type=pydantic_model_class)
-                # This seems more aligned with the OpenAI-specific example provided.
-
-                from pydantic_ai.models.openai import OpenAIResponsesModel #, OpenAIResponsesModelSettings
+                # Construct the input for agent.run_sync based on pydantic-ai documentation
+                agent_input_list = []
                 
-                # We don't have specific model_settings like web search tools for this general case.
-                # So, we might just need OpenAIResponsesModel.
-                # The Agent constructor in the example is: Agent(model=model, model_settings=model_settings)
-                # Or for simpler cases: Agent('openai:gpt-4o', output_type=SupportOutput)
+                # Add formatted messages (text parts)
+                # The _format_messages_for_openai currently creates a list of dicts.
+                # We need to adapt this or extract content for the agent_input_list.
+                # For now, let's take the text content from the messages.
+                # A more sophisticated approach would map roles and complex content types if Agent supports them.
+                # The pydantic-ai examples show a list of strings and ImageUrl/BinaryContent.
+                
+                # Simplified: add text from user messages and the last assistant message if any.
+                # And add file content.
+                
+                # Add file content first if present
+                if file_content_data:
+                    content_bytes = file_content_data.get("content_bytes")
+                    filename = file_content_data.get("filename")
+                    mime_type = get_mime_type(filename) if filename else "application/octet-stream"
 
-                # Let's try the simpler Agent initialization first, then refine if needed.
-                # The first example was: agent = Agent('google-gla:gemini-1.5-flash', ...)
-                # So for OpenAI:
+                    if content_bytes:
+                        from pydantic_ai import BinaryContent # Import locally
+                        if mime_type and mime_type.startswith("image/"):
+                            agent_input_list.append(BinaryContent(data=content_bytes, media_type=mime_type))
+                        elif mime_type == "application/pdf":
+                            # pydantic-ai's BinaryContent with application/pdf seems to cause errors with OpenAI Chat Completions.
+                            # For now, indicate a PDF was present but don't send its raw binary via Agent this way.
+                            agent_input_list.append(f"[Content of PDF file '{filename}' was provided but not directly processed by Agent for OpenAI due to API limitations. Consider summarizing or querying its content via text.]")
+                            print(f"Warning: OpenAIAdapter with Pydantic model - PDF '{filename}' content not sent directly to Agent. Text extraction or a different API approach might be needed for OpenAI to process PDF content for Pydantic output.")
+                        else: # Other file types
+                            agent_input_list.append(BinaryContent(data=content_bytes, media_type=mime_type))
+                
+                # Add text content from messages
+                # This needs to be a sequence of prompts/contexts.
+                # Let's combine user messages and the last assistant message (if any) into a context string for now.
+                # Or, pass each message's content as a string if the Agent handles a list of strings sequentially.
+                # The example `agent.run_sync(['What company is this logo from?', ImageUrl(...)])` suggests it does.
+
+                for msg_dict in openai_messages: # openai_messages is already formatted
+                    if isinstance(msg_dict.get("content"), str):
+                        agent_input_list.append(msg_dict["content"])
+                    elif isinstance(msg_dict.get("content"), list): # For multimodal user messages
+                        for content_part in msg_dict["content"]:
+                            if content_part.get("type") == "text":
+                                agent_input_list.append(content_part["text"])
+                            # ImageUrl is handled by BinaryContent above if it's from file_content_data
+                            # If ImageUrl was part of messages directly, it would need handling here.
+
+                if not agent_input_list: # Ensure there's at least a default prompt
+                    agent_input_list.append("Extract information based on the provided context.")
+
+
                 agent = Agent(
-                    agent_model_identifier, # e.g., 'openai:gpt-3.5-turbo'
+                    agent_model_identifier, 
                     output_type=pydantic_model_class,
-                    # system_prompt can be added if needed
                 )
                 
-                # The run_sync method in the example takes a single string.
-                # TODO: Investigate if pydantic-ai Agent can take a list of messages.
-                # For now, using the prompt_for_agent derived above.
-                result = agent.run_sync(prompt_for_agent) 
-                
+                result = agent.run_sync(agent_input_list) 
                 model_instance = result.output
 
                 # COST TRACKING: The provided examples for pydantic_ai.Agent

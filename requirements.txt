@@ -2,7 +2,7 @@ pydantic>=2.10.6
 openai>=1.0.0
 anthropic>=0.5.0
 mistralai>=1.6.0
-google-cloud-aiplatform
+google-cloud-aiplatform # Keep if used for Vertex AI specific features, otherwise review
 python-dotenv>=1.0.1
 pytest>=7.0.0
 pytest-cov>=4.0.0
@@ -10,4 +10,4 @@ pydantic-ai>=0.0.44
 rapidfuzz>=3.12.2
 requests>=2.32.3
 typer>=0.15.2
-google-generativeai>=0.5.0 # Correct package for Gemini
+google-genai # As per documentation for the new SDK

@@ -89,9 +89,11 @@ print("--- Example 2: File Processing & Model Variations ---")
 # Add your desired models and ensure API keys are set in .env
 models_to_test = [
     'openrouter:openai/gpt-3.5-turbo',       # General purpose, good with text
-    # 'openrouter:google/gemini-flash',      # Fast, multimodal - uncomment if API key available
-    # 'anthropic:claude-3-haiku',            # Fast, good text - uncomment if API key available
-    # 'openai:gpt-4-turbo-preview',          # Powerful, vision - uncomment if API key available
+    'openrouter:google/gemini-pro',          # Using gemini-pro via OpenRouter as an example
+    'anthropic:claude-3-haiku-20240307',     # Fast, good text - ensure ANTHROPIC_API_KEY is set
+    'openai:gpt-4-turbo-preview',            # Powerful, vision - ensure OPENAI_API_KEY is set for this direct call
+    # Note: For direct Google Gemini calls like 'google:gemini-1.5-flash', ensure GOOGLE_GEMINI_API_KEY is set.
+    # The example currently uses OpenRouter for a Gemini model.
 ]
 
 # Check if placeholder files exist
