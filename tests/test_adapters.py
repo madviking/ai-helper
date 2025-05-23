@@ -27,8 +27,13 @@ class TestBaseAdapter(unittest.TestCase):
         self.assertTrue(hasattr(BaseAdapter, 'process'))
 
 class TestOpenAIAdapter(unittest.TestCase):
-    def setUp(self):
+    @patch('openai.OpenAI')
+    @patch.dict(os.environ, {'OPENAI_API_KEY': 'test_key'})
+    def setUp(self, mock_openai_class):
         """Set up test fixtures"""
+        # Mock the OpenAI client
+        self.mock_client = MagicMock()
+        mock_openai_class.return_value = self.mock_client
         self.adapter = OpenAIAdapter()
     
     @patch('openai.OpenAI')
@@ -156,8 +161,13 @@ class TestOpenAIAdapter(unittest.TestCase):
         self.assertEqual(result['response'].description, 'An image')
 
 class TestAnthropicAdapter(unittest.TestCase):
-    def setUp(self):
+    @patch('anthropic.Anthropic')
+    @patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test_key'})
+    def setUp(self, mock_anthropic_class):
         """Set up test fixtures"""
+        # Mock the Anthropic client
+        self.mock_client = MagicMock()
+        mock_anthropic_class.return_value = self.mock_client
         self.adapter = AnthropicAdapter()
     
     @patch('anthropic.Anthropic')
@@ -243,6 +253,7 @@ class TestAnthropicAdapter(unittest.TestCase):
         self.assertEqual(result['output_tokens'], 65)  # 30 + 35
 
 class TestGoogleAdapter(unittest.TestCase):
+    @patch.dict(os.environ, {'GOOGLE_API_KEY': 'test_key'})
     def setUp(self):
         """Set up test fixtures"""
         self.adapter = GoogleAdapter()
@@ -317,6 +328,7 @@ class TestGoogleAdapter(unittest.TestCase):
         self.assertEqual(result['response'].description, 'A beautiful sunset')
 
 class TestOpenRouterAdapter(unittest.TestCase):
+    @patch.dict(os.environ, {'OPENROUTER_KEY': 'test_key'})
     def setUp(self):
         """Set up test fixtures"""
         self.adapter = OpenRouterAdapter()

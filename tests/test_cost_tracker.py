@@ -63,8 +63,11 @@ class TestCostTracker(unittest.TestCase):
         
         # Verify file was written
         mock_file.assert_called()
-        written_data = mock_file().write.call_args[0][0]
-        self.assertIn('openai/gpt-3.5-turbo', written_data)
+        
+        # Verify data was processed correctly
+        self.assertIn('openai/gpt-3.5-turbo', tracker._cost_info)
+        self.assertEqual(tracker._cost_info['openai/gpt-3.5-turbo']['pricing']['prompt'], '0.0005')
+        self.assertEqual(tracker._cost_info['openai/gpt-3.5-turbo']['pricing']['completion'], '0.0015')
     
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.path.exists')
