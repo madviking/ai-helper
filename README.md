@@ -39,5 +39,6 @@ Wall time:
 - **[prompt]** "google-generativeai has been deprecated and the latest library we use is google-genai. See this: https://github.com/googleapis/python-genai.
 - **[observation]** Unfortunately Google didn't handle situation well with info missing on its OWN latest sdk. 
   - **[cost]** $11.5
+- **[prompt]** Please read the README.md. Implementation is not finished. Pay special attention into using PydanticAI. Now the adapters are parsing json etc. whereas they should be leveraging on PydanticAI.
 
 

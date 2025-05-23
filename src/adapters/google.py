@@ -1,10 +1,8 @@
 import os
 import json
 from typing import Optional, Dict, Any, List
-import google.generativeai as genai # Reverting to this based on common SDK usage
-from google.generativeai import types as genai_types
-from google.protobuf.json_format import MessageToDict
-
+from google import genai
+from google.genai import types as genai_types
 
 from src.adapters.base_adapter import BaseAdapter
 from src.cost_tracker import CostTracker
@@ -24,11 +22,10 @@ class GoogleAdapter(BaseAdapter):
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY or GOOGLE_GEMINI_API_KEY environment variable not set.")
         
-        genai.configure(api_key=api_key)
         # For Gemini, model_name might just be e.g. "gemini-1.5-flash" or "gemini-pro"
         # The SDK prepends "models/" if not already present for some calls.
         # We'll assume self.model_name is the direct model identifier like "gemini-1.5-flash-latest".
-        self.client = genai.GenerativeModel(model_name=self.model_name) # Use model_name=
+        self.client = genai.Client(model_name=self.model_name, api_key=api_key) # Use model_name=
         print(f"GoogleAdapter initialized for model: {self.model_name}")
 
     def _convert_to_gemini_tools(self, tools_details: List[Dict[str, Any]]) -> Optional[List[genai_types.Tool]]: # Prefixed Tool
