@@ -34,3 +34,9 @@ Wall time:
 - **[observation]** Started by implementing all the tests and part of the functionality. Tests are mostly bs.
   - **[cost]** $2.5
 - **[prompt]** Please read README.md and continue with the full implementation of this project. Target is to be able to run "python -m example" without errors in addition to tests.
+- **[observation]** Actually managed to implement the main functionality in a fairly clean way. But stopped saying its ready. Then claimed the test discovery being same as running tests.
+- **[prompt]** but if you actually run them (just pytest command) you see the failures 
+- **[prompt]** we are missing the following functionalities: - cost calculation (as specified in cost_tracker.py) - tool calling (tools.py) 
+  - **[cost]** $7.3
+- **[observation]** So looks like the entire adapter implmenentation is missing, we only have mock data coming from there. No wonder it works so well...
+- **[prompt]** "please read README.md and continue with the full implementation of this project. At least the adapters implementation is missing entirely. You can leave the current mocking there, but please implement the adapters as well."

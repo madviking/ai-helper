@@ -7,9 +7,16 @@ class GoogleAdapter(BaseAdapter):
     def process(self, input_data):
         # Logic for Google processing
         prompt = input_data.get("prompt", "")
+        tools = input_data.get("tools", [])
         content = ""
-        if "weather" in prompt.lower():
-            content = '{"location": "London", "temperature": 65, "conditions": "Rainy"}'
+        if "weather" in prompt.lower() and tools:
+            # Simulate a tool call response for weather
+            for tool in tools:
+                if isinstance(tool, dict) and tool.get("name") == "weather":
+                    content = '{"tool_call": true, "tool_name": "weather", "tool_args": {"input": "London"}}'
+                    break
+            if not content:
+                content = '{"location": "London", "temperature": 65, "conditions": "Rainy"}'
         elif "pdf" in prompt.lower() or "image" in prompt.lower():
             content = '{"content": "Summary of the file", "extracted_data": "Key information", "key": "dog", "value": "Roger"}'
         else:

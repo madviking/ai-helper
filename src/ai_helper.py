@@ -49,8 +49,22 @@ class AiHelper:
         input_tokens = response.get("input_tokens", 0)
         output_tokens = response.get("output_tokens", 0)
         
-        if output_model:
-            # If an output model is specified, validate the response content
+        # Check if the response indicates a tool call (assuming tool call info is in response)
+        content = response.get("content", "")
+        if tools and "tool_call" in content.lower():
+            import json
+            try:
+                tool_data = json.loads(content)
+                if "tool_name" in tool_data and "tool_args" in tool_data:
+                    tool_result = self._execute_tool(tool_data["tool_name"], tool_data["tool_args"])
+                    if output_model:
+                        response = self._validate_model(tool_result, output_model)
+                    else:
+                        response = {"content": tool_result, "input_tokens": input_tokens, "output_tokens": output_tokens}
+            except json.JSONDecodeError:
+                pass
+        elif output_model:
+            # If an output model is specified and no tool call, validate the response content
             content = response.get("content", "")
             response = self._validate_model(content, output_model)
         

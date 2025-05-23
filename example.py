@@ -10,9 +10,11 @@ from py_models.general_example_model import GeneralExampleModel
 # Initialize AiHelper with a model
 ai_helper = AiHelper('openrouter:openai/gpt-3.5-turbo')
 
-# Define tools
-calculator_tool = {"name": "calculator", "description": "A simple calculator that can add, subtract, multiply, and divide.", "function": lambda x: f"Calculated: {x}"}
-weather_tool = {"name": "weather", "description": "A tool to get the current weather information.", "function": lambda x: f"Weather at {x}"}
+# Define tools using actual implementations from src.tools
+from src.tools import calculator, weather, pdf_reader
+
+calculator_tool = {"name": "calculator", "description": "A simple calculator that can add, subtract, multiply, and divide.", "function": calculator}
+weather_tool = {"name": "weather", "description": "A tool to get the current weather information.", "function": weather}
 
 ai_helper.add_tool(calculator_tool)
 ai_helper.add_tool(weather_tool)
@@ -47,9 +49,10 @@ for model in models_to_test:
         else:
             print(f"Test file {test_file_path} not found, skipping file test.")
         
-        test_image_path = "tests/files/test.png"
-        if os.path.exists(test_image_path):
-            result = ai_helper.ask("Please analyze this image.", output_model=GeneralExampleModel, file_path=test_image_path)
-            print("Image file result:", result)
-        else:
-            print(f"Test image {test_image_path} not found, skipping image test.")
+
+    test_image_path = "tests/files/test.png"
+    if os.path.exists(test_image_path):
+        result = ai_helper.ask("Please analyze this image.", output_model=GeneralExampleModel, file_path=test_image_path)
+        print("Image file result:", result)
+    else:
+        print(f"Test image {test_image_path} not found, skipping image test.")
