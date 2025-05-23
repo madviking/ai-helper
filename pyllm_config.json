@@ -1,0 +1,8 @@
+{
+    "api_keys": {
+        "openai": "YOUR_OPENAI_API_KEY_HERE"
+    },
+    "models": {
+        "default_openai": "gpt-3.5-turbo"
+    }
+}

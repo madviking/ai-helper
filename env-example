@@ -1,19 +1,23 @@
 # LLM Provider API Keys
-# Copy this file to .env and fill in your API keys
+# Copy this file to .env and fill in your actual API keys.
+# Ensure that .env is listed in your .gitignore file.
 
 # OpenAI API
-OPENAI_API_KEY="xx"
+OPENAI_API_KEY="your_openai_api_key_here"
+
+# Google AI (Vertex AI or Generative Language API)
+# For Vertex AI, you might need GOOGLE_APPLICATION_CREDENTIALS pointing to a JSON file.
+# For simpler Google Generative AI (e.g., Gemini models via google-genai), GOOGLE_API_KEY might be used.
+# Clarify based on which Google library/service the GoogleAdapter will primarily use.
+# For now, let's assume GOOGLE_API_KEY will be the primary method for the GoogleAdapter.
+GOOGLE_API_KEY="your_google_api_key_here"
+# GOOGLE_APPLICATION_CREDENTIALS="path/to/your/google_credentials.json" # Optional, if needed
 
 # Anthropic API
-ANTHROPIC_API_KEY="xx"
+ANTHROPIC_API_KEY="your_anthropic_api_key_here"
 
-# Mistral API 
-# MISTRAL_API_KEY=
+# OpenRouter API
+OPENROUTER_API_KEY="your_openrouter_api_key_here"
 
-# Google Vertex AI
-GOOGLE_APPLICATION_CREDENTIALS=/Users/trailo/google.json
-GOOGLE_PROJECT_ID=680678599008
-GOOGLE_LOCATION=us-central1  # The region where your Vertex AI resources are located
-GOOGLE_API_KEY = "xx"
-
-OPENROUTER_KEY="xx"
+# Example for other keys if needed in the future
+# MISTRAL_API_KEY="your_mistral_api_key_here"
