@@ -10,25 +10,22 @@ from py_models.general_example_model import GeneralExampleModel
 # Initialize AiHelper with a model
 ai_helper = AiHelper('openrouter:openai/gpt-4o')
 
-# Define tools using actual implementations from src.tools
-from src.tools import calculator, weather, pdf_reader
+# Define tools using the TOOLS list from src.tools for PydanticAI compatibility
+from src.tools import TOOLS
 
-calculator_tool = {"name": "calculator", "description": "A simple calculator that can add, subtract, multiply, and divide.", "function": calculator}
-weather_tool = {"name": "weather", "description": "A tool to get the current weather information.", "function": weather}
-
-ai_helper.add_tool(calculator_tool)
-ai_helper.add_tool(weather_tool)
+for tool in TOOLS:
+    ai_helper.add_tool(tool)
 
 # Test with weather tool
-result = ai_helper.ask("What is the weather like today in Sofia, Bulgaria?", tools=[weather_tool], output_model=WeatherModel)
+result = ai_helper.ask("What is the weather like today in Sofia, Bulgaria?", tools=[tool for tool in TOOLS if tool['name'] == 'weather'], output_model=WeatherModel)
 print("Weather result:", result)
 
 # List of models to test
 models_to_test = [
-    'google:gemini-2.5-flash-preview-05-20',
-    'openrouter:google/gemini-2.5-flash-preview-05-20',
-    'anthropic:claude-3',
-    'openrouter:anthropic/claude-3',
+    'google:gemini-1.5-pro',
+    'openrouter:google/gemini-pro',
+    'anthropic:claude-3-opus-20240229',
+    'openrouter:anthropic/claude-3-opus-20240229',
     'openai:gpt-4o',
     'openrouter:openai/gpt-4o',
 ]

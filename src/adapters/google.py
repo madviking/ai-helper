@@ -8,14 +8,15 @@ load_dotenv()
 class GoogleAdapter(BaseAdapter):
     def __init__(self, model_identifier: str = "gemini-1.5-pro"):
         self.model_identifier = model_identifier
+
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
+
             api_key = os.getenv("GOOGLE_API_KEY")
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY environment variable not set")
-            genai.configure(api_key=api_key)
-            self.client = genai
-            self.model = genai.GenerativeModel(model_name=self.model_identifier)
+            self.client = genai.Client(api_key=api_key)
         except ImportError:
             raise ImportError("google-genai library is not installed. Please install it with `pip install google-genai`")
         except Exception as e:
@@ -58,9 +59,10 @@ class GoogleAdapter(BaseAdapter):
                 )
 
             # Generate content
-            response = self.model.generate_content(
+            response = self.client.generate_content(
                 contents=messages,
-                tools=tool_config
+                tools=tool_config,
+                model=self.model_identifier
             )
 
             # Process response

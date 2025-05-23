@@ -44,3 +44,5 @@ Wall time:
   - **[cost]** $3.8
 - **[observation]** Reverted unsuccesful Google implementation. Restarting with a new prompt.
 - **[prompt]** "Please read README.md and continue with the full implementation of this project. The Google adapter is not working, please implement with google-genai https://github.com/googleapis/python-genai. Also, please implement the cost calculation as specified in cost_tracker.py. The tool calling is also missing (tools.py). Also see about errors when calling python -m example."
+  - **[cost]** $0.5
+- **[observation]** Had to fix manually as it seems Grok is unable to understand google genai library which is quite new.
