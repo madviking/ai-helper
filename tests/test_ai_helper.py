@@ -142,9 +142,10 @@ class TestAiHelper(unittest.TestCase):
 
     def test_ask_method_with_pydantic_model_success(self):
         helper = self._get_helper_with_mocked_adapter()
-        llm_output_json_str = '{"name": "Test Name", "value": 123, "description": "Test Description"}'
+        # Adapter now returns a model instance directly
+        expected_model_instance = SimpleTestModel(name="Test Name", value=123, description="Test Description")
         helper.adapter.process_fn.return_value = {
-            "content": {"text": llm_output_json_str},
+            "content": {"model_instance": expected_model_instance, "text": None, "tool_calls": []},
             "cost_info": {"tokens_used": 30, "cost": 0.0003}
         }
         result = helper.ask("Get SimpleTestModel data", pydantic_model=SimpleTestModel)
@@ -154,28 +155,43 @@ class TestAiHelper(unittest.TestCase):
         self.assertEqual(result.value, 123)
         self.assertEqual(result.description, "Test Description")
         self.assertAlmostEqual(result.model_fields_filled_percentage, 100.0)
+        
+        # Check that pydantic_model_class was passed to adapter, not schema
+        call_args = helper.adapter.process_fn.call_args[0][0]
+        self.assertEqual(call_args.get("pydantic_model_class"), SimpleTestModel)
+        self.assertNotIn("pydantic_model_json_schema", call_args)
         self.cost_tracker.track_cost.assert_called_once_with({"tokens_used": 30, "cost": 0.0003})
 
     def test_ask_method_with_pydantic_model_partial_validation_discard_fields(self):
         helper = self._get_helper_with_mocked_adapter()
-        llm_output_json_str_partial = '{"name": "Optional Test", "count": "not_a_number", "extra_field": "ignored_value"}'
+        # Adapter returns a model instance. Pydantic's default behavior for optional fields
+        # when data is missing or invalid (if conversion fails gracefully) is to set them to None or default.
+        # The "discard fields" rule from README implies this behavior.
+        # If pydantic-ai's Agent correctly populates the model based on LLM output,
+        # it should handle type mismatches by omitting the field or setting to None if optional.
+        
+        # Simulate pydantic-ai Agent returning a partially filled model
+        # (e.g., 'count' was invalid from LLM, so Agent didn't set it, or set it to None)
+        partially_filled_model = OptionalFieldsModel(name="Optional Test", count=None, flag=None)
         helper.adapter.process_fn.return_value = {
-            "content": {"text": llm_output_json_str_partial},
+            "content": {"model_instance": partially_filled_model, "text": None, "tool_calls": []},
             "cost_info": {"tokens_used": 40, "cost": 0.0004}
         }
         result = helper.ask("Get partial OptionalFieldsModel data", pydantic_model=OptionalFieldsModel)
 
         self.assertIsInstance(result, OptionalFieldsModel)
         self.assertEqual(result.name, "Optional Test", "Field 'name' should be correctly parsed.")
-        self.assertIsNone(result.count, "Field 'count' with invalid type should be discarded (become None).")
+        self.assertIsNone(result.count, "Field 'count' should be None if discarded by adapter/Agent.")
         self.assertIsNone(result.flag, "Missing optional field 'flag' should be None.")
         self.assertAlmostEqual(result.model_fields_filled_percentage, (1/3) * 100.0, places=5)
         self.cost_tracker.track_cost.assert_called_once_with({"tokens_used": 40, "cost": 0.0004})
 
     def test_ask_method_pydantic_model_empty_llm_response(self):
         helper = self._get_helper_with_mocked_adapter()
+        # Adapter returns an empty/default model instance if LLM provides nothing usable
+        empty_model_instance = OptionalFieldsModel() # All fields will be None
         helper.adapter.process_fn.return_value = {
-            "content": {"text": ""}, 
+            "content": {"model_instance": empty_model_instance, "text": None, "tool_calls": []}, 
             "cost_info": {"tokens_used": 5, "cost": 0.00005}
         }
         result = helper.ask("Query", pydantic_model=OptionalFieldsModel)
@@ -184,15 +200,21 @@ class TestAiHelper(unittest.TestCase):
         self.assertIsNone(result.count)
         self.assertIsNone(result.flag)
         self.assertAlmostEqual(result.model_fields_filled_percentage, 0.0)
+        self.cost_tracker.track_cost.assert_called_once_with({"tokens_used": 5, "cost": 0.00005})
+
 
     def test_ask_method_pydantic_model_malformed_json_response(self):
         helper = self._get_helper_with_mocked_adapter()
+        # If adapter (using pydantic-ai Agent) fails to parse, it should ideally return
+        # a default/empty model instance or AiHelper should handle it.
+        # AiHelper now expects a model_instance. If it's None or not the right type,
+        # AiHelper itself constructs a default model.
         helper.adapter.process_fn.return_value = {
-            "content": {"text": "{'name': 'Test"}, 
+            "content": {"model_instance": None, "text": "Malformed LLM output", "tool_calls": []}, # Simulate Agent failing to produce a model
             "cost_info": {"tokens_used": 6, "cost": 0.00006}
         }
         result = helper.ask("Query", pydantic_model=OptionalFieldsModel)
-        self.assertIsInstance(result, OptionalFieldsModel)
+        self.assertIsInstance(result, OptionalFieldsModel) # AiHelper should construct a default
         self.assertIsNone(result.name)
         self.assertIsNone(result.count)
         self.assertIsNone(result.flag)

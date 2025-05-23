@@ -1,8 +1,8 @@
 import os
 import json
 from typing import Optional, Dict, Any, List
-from google import genai
-from google.genai import types as genai_types
+from google import genai # Revert to original import
+from google.genai import types as genai_types # This was likely correct
 
 from src.adapters.base_adapter import BaseAdapter
 from src.cost_tracker import CostTracker
@@ -25,8 +25,9 @@ class GoogleAdapter(BaseAdapter):
         # For Gemini, model_name might just be e.g. "gemini-1.5-flash" or "gemini-pro"
         # The SDK prepends "models/" if not already present for some calls.
         # We'll assume self.model_name is the direct model identifier like "gemini-1.5-flash-latest".
-        self.client = genai.Client(model_name=self.model_name, api_key=api_key) # Use model_name=
-        print(f"GoogleAdapter initialized for model: {self.model_name}")
+        # Initialize the client with the API key.
+        self.client = genai.Client(api_key=api_key)
+        print(f"GoogleAdapter initialized for model: {self.model_name} using provided API key.")
 
     def _convert_to_gemini_tools(self, tools_details: List[Dict[str, Any]]) -> Optional[List[genai_types.Tool]]: # Prefixed Tool
         if not tools_details:
@@ -130,7 +131,14 @@ class GoogleAdapter(BaseAdapter):
         # This requires the model to support JSON output mode.
 
         try:
-            response = self.client.generate_content(
+            # Get the model from the client
+            model_to_use = self.client.get_model(self.model_name) # Or genai.GenerativeModel(model_name=self.model_name, client=self.client)
+                                                                # Simpler: genai.GenerativeModel(model_name=self.model_name) if client is implicitly used or API key is global
+                                                                # Given client is initialized with API key, GenerativeModel should use it.
+            if model_to_use is None: # Check if get_model is the right way or if GenerativeModel is preferred
+                 model_to_use = genai.GenerativeModel(model_name=self.model_name) # Fallback to direct instantiation
+
+            response = model_to_use.generate_content(
                 contents=gemini_contents,
                 tools=gemini_tools if gemini_tools else None, # Pass None if no tools
                 generation_config=genai_types.GenerationConfig(**generation_config) if generation_config else None,

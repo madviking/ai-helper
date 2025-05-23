@@ -40,5 +40,6 @@ Wall time:
 - **[observation]** Unfortunately Google didn't handle situation well with info missing on its OWN latest sdk. 
   - **[cost]** $11.5
 - **[prompt]** Please read the README.md. Implementation is not finished. Pay special attention into using PydanticAI. Now the adapters are parsing json etc. whereas they should be leveraging on PydanticAI.
-
+- **[prompt]** Needed several prompts, including pasting pydanticai examples and their own toolkit's initialization instructions.
+  - **[cost]** $1.8
 

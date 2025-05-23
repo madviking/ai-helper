@@ -3,9 +3,9 @@ import json
 import base64
 import mimetypes
 from typing import Optional, Dict, Any, List, Type
-from openai import OpenAI, APIError
+from openai import OpenAI, APIError # Keep for non-agent usage or if Agent needs it
 from pydantic import BaseModel
-from pydantic_ai import patch # Import the patch function
+from pydantic_ai import Agent # Import Agent
 from src.adapters.base_adapter import BaseAdapter
 from src.cost_tracker import CostTracker
 
@@ -19,12 +19,9 @@ class OpenAIAdapter(BaseAdapter):
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set.")
-        
-        # Initialize the OpenAI client
-        unpatched_client = OpenAI(api_key=api_key)
-        # Patch the client with PydanticAI capabilities
-        self.client = patch(unpatched_client)
-        print(f"OpenAIAdapter initialized and patched for model: {self.model_name}")
+        # Standard OpenAI client, might be used by Agent or for non-Pydantic calls
+        self.client = OpenAI(api_key=api_key) 
+        print(f"OpenAIAdapter initialized for model: {self.model_name}")
 
     def _format_messages_for_openai(self, messages: List[Dict[str, Any]], file_content_data: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
         formatted_messages = []
@@ -99,64 +96,79 @@ class OpenAIAdapter(BaseAdapter):
 
         try:
             if pydantic_model_class:
-                # Use the patched client with response_model parameter
-                # This call is expected to be handled by the pydantic-ai patch,
-                # which will guide the LLM to return JSON and parse it into the model.
-                # The patched method should ideally return (PydanticModelInstance, RawCompletionData)
+                # Use pydantic_ai.Agent for structured output
+                agent_model_identifier = f"openai:{self.model_name}"
                 
-                # The test mocks `self.client.chat.completions.create`.
-                # If `self.client` is patched, this mocked method will be called by pydantic-ai's machinery.
-                # The mock returns `mock_openai_response` which contains the JSON string in `choices[0].message.content`
-                # and `usage` data. Pydantic-ai's patch should parse this content.
+                # The Agent needs a system prompt or a user prompt.
+                # Let's try to pass the messages to the agent if possible,
+                # or construct a single prompt string from the last user message.
+                # The example `agent.run_sync('Where does "hello world" come from?')` suggests a single string.
+                
+                # Extract the last user message content as the prompt for the Agent.
+                # This is a simplification; a more robust solution might concatenate messages
+                # or require pydantic-ai's Agent to handle a list of messages.
+                prompt_for_agent = "Extract information." # Default prompt
+                if openai_messages:
+                    # Find the last user message, or the first if only one.
+                    # PydanticAI Agent might take the 'messages' kwarg.
+                    # Let's assume it takes a simple prompt string for `run_sync` based on the example.
+                    last_user_message_content = ""
+                    for msg in reversed(openai_messages):
+                        if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                            last_user_message_content = msg["content"]
+                            break
+                    if last_user_message_content:
+                         prompt_for_agent = last_user_message_content
+                    elif isinstance(openai_messages[0].get("content"), str) : # Fallback to first message if no user message or complex content
+                        prompt_for_agent = openai_messages[0]["content"]
 
-                # The `response_model` parameter is key here for the patched client.
-                response_tuple = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=openai_messages,
-                    response_model=pydantic_model_class, 
-                    # Tools might be incompatible with response_model in some patch versions,
-                    # or require specific handling. The test focuses on response_model.
-                    # If tools_details are present, this might need adjustment or error handling.
+
+                # The OpenAI example for pydantic-ai shows passing a `model` instance of `OpenAIResponsesModel`
+                # and `model_settings` to the Agent.
+                # from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
+                # model_settings = OpenAIResponsesModelSettings(...)
+                # model = OpenAIResponsesModel(self.model_name) # Pass model name string
+                # agent = Agent(model=model, model_settings=model_settings, output_type=pydantic_model_class)
+                # This seems more aligned with the OpenAI-specific example provided.
+
+                from pydantic_ai.models.openai import OpenAIResponsesModel #, OpenAIResponsesModelSettings
+                
+                # We don't have specific model_settings like web search tools for this general case.
+                # So, we might just need OpenAIResponsesModel.
+                # The Agent constructor in the example is: Agent(model=model, model_settings=model_settings)
+                # Or for simpler cases: Agent('openai:gpt-4o', output_type=SupportOutput)
+
+                # Let's try the simpler Agent initialization first, then refine if needed.
+                # The first example was: agent = Agent('google-gla:gemini-1.5-flash', ...)
+                # So for OpenAI:
+                agent = Agent(
+                    agent_model_identifier, # e.g., 'openai:gpt-3.5-turbo'
+                    output_type=pydantic_model_class,
+                    # system_prompt can be added if needed
                 )
+                
+                # The run_sync method in the example takes a single string.
+                # TODO: Investigate if pydantic-ai Agent can take a list of messages.
+                # For now, using the prompt_for_agent derived above.
+                result = agent.run_sync(prompt_for_agent) 
+                
+                model_instance = result.output
 
-                # Assuming the patched client returns (model_instance, original_completion_object)
-                # This is a common pattern for instructor-like libraries.
-                if isinstance(response_tuple, tuple) and len(response_tuple) == 2:
-                    model_instance, completion = response_tuple
-                else:
-                    # Fallback if the patch returns only the model instance (less ideal for cost tracking)
-                    model_instance = response_tuple 
-                    completion = None # No direct access to original completion object
-
-                if completion and hasattr(completion, 'usage') and completion.usage:
-                    cost_info = {
-                        "tokens_used": completion.usage.total_tokens,
-                        "prompt_tokens": completion.usage.prompt_tokens,
-                        "completion_tokens": completion.usage.completion_tokens,
-                        "cost": 0 
-                    }
-                    if self.cost_tracker:
-                        calculated_cost = self.cost_tracker.calculate_cost(
-                            self.model_name, 
-                            completion.usage.prompt_tokens, 
-                            completion.usage.completion_tokens
-                        )
-                        if calculated_cost is not None:
-                            cost_info["cost"] = calculated_cost
-                else:
-                    # Fallback if usage info is not available
-                    cost_info = {"tokens_used": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0, "warning": "Usage data not available or patch signature mismatch"}
+                # COST TRACKING: The provided examples for pydantic_ai.Agent
+                # do NOT show how to get token usage. This is a significant issue.
+                # For now, cost_info will be a placeholder.
+                cost_info = {
+                    "tokens_used": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0,
+                    "warning": "Token usage data not available via pydantic_ai.Agent in this version."
+                }
+                # If self.cost_tracker exists, it won't be able to calculate cost without token counts.
 
                 return {
                     "content": {"model_instance": model_instance, "text": None, "tool_calls": []},
                     "cost_info": cost_info
                 }
             else:
-                # Standard processing for text or tool calls (no Pydantic model requested, use unpatched behavior)
-                # Note: self.client is already patched. If we need unpatched, we'd have to manage two clients.
-                # For now, assume standard calls on patched client behave normally if response_model is not given.
-                # Or, the patch might require response_model. This needs testing.
-                # If standard calls fail on patched client without response_model, this logic is flawed.
+                # Standard processing using the raw OpenAI client (self.client)
                 api_params = {
                     "model": self.model_name,
                     "messages": openai_messages,

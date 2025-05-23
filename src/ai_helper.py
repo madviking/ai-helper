@@ -97,8 +97,8 @@ class AiHelper:
             input_data: Dict[str, Any] = {"messages": list(messages)} # Pass a copy
 
             if pydantic_model:
-                # Pydantic model schema is typically for the *final* response, not intermediate tool calls
-                input_data["pydantic_model_json_schema"] = pydantic_model.model_json_schema()
+                # Pass the Pydantic model class itself to the adapter
+                input_data["pydantic_model_class"] = pydantic_model
 
             current_tools_details = []
             if tools: # Only pass tool schemas on the first turn or if explicitly re-requested
@@ -177,83 +177,32 @@ class AiHelper:
             messages.extend(tool_results_messages)
             # Loop back to call LLM with tool results
 
-        # After loop (either final response or max_tool_calls reached)
+            # After loop (either final response or max_tool_calls reached)
         if pydantic_model:
-            try:
-                # The "discard fields" rule: Pydantic's default behavior with `parse_raw`
-                # or `model_validate_json` when extra='ignore' (default for BaseModel)
-                # handles ignoring extra fields. For type mismatches on existing fields,
-                # Pydantic raises ValidationError. We need to catch this and selectively
-                # populate the model.
+            # Adapter is now expected to return a Pydantic model instance directly
+            # in adapter_response["content"]["model_instance"]
+            if adapter_response and isinstance(adapter_response, dict):
+                content_part = adapter_response.get("content", {})
+                if isinstance(content_part, dict):
+                    model_instance = content_part.get("model_instance")
+                    if model_instance and isinstance(model_instance, pydantic_model):
+                        # TODO: Add logic for "how many percent of model fields are filled"
+                        # This would involve inspecting model_instance.__fields_set__
+                        # and comparing with pydantic_model.model_fields.
+                        return model_instance
+                    elif model_instance is not None: # It's something, but not the expected model type
+                        print(f"Warning: Adapter returned a model_instance of type {type(model_instance)}, expected {pydantic_model}.")
+                        # Fallback or error? For now, try to return it if it's a BaseModel at least.
+                        if isinstance(model_instance, BaseModel):
+                            return model_instance 
+                        return pydantic_model.model_construct() # Return empty/default model
                 
-                parsed_data = json.loads(llm_text_response)
-                # Create model instance, allowing validation errors for individual fields
-                # by trying to construct with valid fields and ignoring/defaulting others.
-                
-                # This is a simplified approach to "discard fields".
-                # A more robust way is to iterate through model fields, try to get value from parsed_data,
-                # and catch individual validation errors per field if Pydantic doesn't do this gracefully.
-                # Pydantic v2's `model_validate` with `strict=False` might be more lenient.
-                # For now, we'll try a direct parse and then handle validation errors by creating
-                # an instance with None for problematic fields.
-
-                validated_data = {}
-                potential_data = parsed_data if isinstance(parsed_data, dict) else {}
-
-                for field_name, field_info in pydantic_model.model_fields.items():
-                    if field_name in potential_data:
-                        try:
-                            # Try to create a temporary model with just this field to validate it
-                            # This is a bit complex; Pydantic's standard validation is usually sufficient
-                            # if fields are Optional.
-                            # If a field is required and invalid, it will fail.
-                            # If optional and invalid, it should become None or default.
-                            # Let's rely on Pydantic's default behavior for now and refine if tests fail.
-                            validated_data[field_name] = potential_data[field_name]
-                        except ValidationError: # This catch might not be hit as expected here
-                            validated_data[field_name] = None # Discard by setting to None
-                    else:
-                         # Field not in response, will be None if Optional, or error if required (handled by Pydantic)
-                         pass
-                
-                # Create the model instance. If required fields are missing or invalid after this,
-                # Pydantic will raise ValidationError.
-                # The "discard" rule means if a field from LLM is bad type for an Optional field, it becomes None.
-                # If bad type for a required field, it's an issue.
-                # The README implies "discard" means "don't error out, just omit the bad field".
-                # This usually means making fields Optional in the Pydantic model.
-
-                # Let's try to create the model and catch validation errors to build it partially.
-                try:
-                    model_instance = pydantic_model.model_validate(potential_data)
-                except ValidationError as e:
-                    # If validation fails, create an instance with valid fields only
-                    valid_data_for_partial_model = {}
-                    errors_dict = e.errors() # List of error dicts
-                    error_fields = {err['loc'][0] for err in errors_dict if err['loc']}
-
-                    for field_name in pydantic_model.model_fields.keys():
-                        if field_name not in error_fields and field_name in potential_data:
-                            valid_data_for_partial_model[field_name] = potential_data[field_name]
-                    model_instance = pydantic_model.model_construct(**valid_data_for_partial_model)
-                    # model_construct bypasses validation, useful for creating models with partial data.
-                    # Fields not in valid_data_for_partial_model will be None or their default.
-
-                return model_instance
-            except json.JSONDecodeError:
-                # LLM response was not valid JSON, return an empty/default model instance
-                return pydantic_model.model_construct() # Bypasses validation, all fields default/None
-            except ValidationError as e: # Catch validation errors during model_validate
-                # This is the primary catch for "discarding" fields.
-                # We create a model instance, and Pydantic handles setting invalid optional fields to None/default.
-                # If required fields are invalid, it's a problem.
-                # The logic above with model_construct after catching ValidationError is a more explicit way.
-                # For now, let's assume the above try/except for model_validate and subsequent model_construct handles it.
-                # If tests show issues, this area needs refinement.
-                # Fallback: return an empty model if parsing/validation is too problematic.
-                return pydantic_model.model_construct() # Fallback
+            # If model_instance was not found or not of the correct type in the response
+            print(f"Warning: Pydantic model {pydantic_model.__name__} requested, but not found or invalid in adapter response.")
+            return pydantic_model.model_construct() # Return empty/default model
         else:
-            # No Pydantic model specified, return the raw text response
+            # No Pydantic model specified, return the raw text response from the last LLM interaction
+            # llm_text_response should already be set from the loop
             return llm_text_response
 
     def _execute_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> Any:
