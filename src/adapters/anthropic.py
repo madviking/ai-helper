@@ -2,8 +2,12 @@ import os
 import json
 import base64
 import mimetypes
-from typing import Optional, Dict, Any, List
-from anthropic import Anthropic, APIError # Import Anthropic and APIError
+from typing import Optional, Dict, Any, List, Type
+from anthropic import Anthropic, APIError
+from pydantic import BaseModel
+from pydantic_ai import Agent, BinaryContent
+from pydantic_ai.models.anthropic import AnthropicModel # Corrected import based on file content
+
 from src.adapters.base_adapter import BaseAdapter
 from src.cost_tracker import CostTracker
 
@@ -108,80 +112,135 @@ class AnthropicAdapter(BaseAdapter):
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         messages = input_data.get("messages", [])
-        tools_details_aihelper = input_data.get("tools_details", []) # AiHelper's schema
+        tools_details_aihelper = input_data.get("tools_details", [])
         file_content_data = input_data.get("file_content")
+        pydantic_model_class: Optional[Type[BaseModel]] = input_data.get("pydantic_model_class")
         system_prompt = None # Anthropic uses a dedicated 'system' parameter
 
-        # Extract system prompt if present as the first message and role 'system'
-        # (AiHelper doesn't explicitly create 'system' role messages yet in its loop)
-        # For now, assume messages are user/assistant/tool.
-
-        anthropic_messages = self._format_messages_for_anthropic(messages, file_content_data)
-        
-        anthropic_tools = []
-        if tools_details_aihelper:
-            for tool_schema in tools_details_aihelper:
-                func_schema = tool_schema.get("function", {})
-                anthropic_tools.append({
-                    "name": func_schema.get("name"),
-                    "description": func_schema.get("description"),
-                    "input_schema": func_schema.get("parameters") # JSON schema for parameters
-                })
-        
-        api_params = {
-            "model": self.model_name,
-            "max_tokens": 4096, # Default, can be configured
-            "messages": anthropic_messages,
-        }
-        if system_prompt:
-            api_params["system"] = system_prompt
-        if anthropic_tools:
-            api_params["tools"] = anthropic_tools
-            # api_params["tool_choice"] = {"type": "auto"} # Let model decide
-
-        try:
-            response = self.client.messages.create(**api_params)
-        except APIError as e:
-            print(f"Anthropic API Error: {e}")
-            return {"content": {"text": f"Anthropic API Error: {e}", "tool_calls": []}, "cost_info": None}
-
-        text_content = None
-        tool_calls_result = [] # To be formatted for AiHelper
-
-        # Anthropic response.content is a list of blocks
-        for block in response.content:
-            if block.type == "text":
-                text_content = (text_content or "") + block.text
-            elif block.type == "tool_use":
-                tool_calls_result.append({
-                    "id": block.id, # This is the tool_use_id
-                    "type": "function", # Align with AiHelper's expectation
-                    "function": {
-                        "name": block.name,
-                        "arguments": json.dumps(block.input if block.input is not None else {})
-                    }
-                })
+        # Note: _format_messages_for_anthropic is for the direct API call.
+        # pydantic-ai.Agent might expect a simpler list of strings/BinaryContent.
         
         cost_info = None
-        if response.usage:
-            prompt_tokens = response.usage.input_tokens
-            completion_tokens = response.usage.output_tokens
-            total_tokens = prompt_tokens + completion_tokens # Anthropic provides input/output separately
-            
-            cost_info = {
-                "tokens_used": total_tokens,
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "cost": 0 # Placeholder
-            }
-            if self.cost_tracker:
-                calculated_cost = self.cost_tracker.calculate_cost(
-                    self.model_name, prompt_tokens, completion_tokens
+
+        try:
+            if pydantic_model_class:
+                agent_input_list = []
+                # Handle file content for Agent
+                if file_content_data:
+                    content_bytes = file_content_data.get("content_bytes")
+                    filename = file_content_data.get("filename")
+                    mime_type = get_mime_type(filename) if filename else "application/octet-stream"
+                    if content_bytes:
+                        if mime_type and mime_type.startswith("image/"):
+                            agent_input_list.append(BinaryContent(data=content_bytes, media_type=mime_type))
+                        elif mime_type == "application/pdf":
+                            agent_input_list.append(f"[Content of PDF file '{filename}' was provided. Model should be prompted to process it if capable.]")
+                            print(f"Warning: AnthropicAdapter with Pydantic model - PDF '{filename}' content sent as placeholder text to Agent.")
+                        else:
+                            agent_input_list.append(BinaryContent(data=content_bytes, media_type=mime_type))
+                
+                # Add text content from messages for Agent
+                # This simplified loop takes string content from messages.
+                # Anthropic's _format_messages_for_anthropic is more complex due to roles.
+                # pydantic-ai Agent's run_sync expects a list of content parts.
+                for msg in messages: # Using raw messages here
+                    if isinstance(msg.get("content"), str):
+                        agent_input_list.append(msg["content"])
+                    # TODO: Handle complex content in messages if needed for Agent context
+
+                extraction_prompt = (
+                    f"Based on the preceding context and any provided files, "
+                    f"extract the information and structure it strictly according to the '{pydantic_model_class.__name__}' Pydantic model. "
+                    f"Ensure all fields are populated if information is available. "
+                    f"If information for a field is not available, omit it or set it to null if the field is optional."
                 )
-                if calculated_cost is not None:
-                    cost_info["cost"] = calculated_cost
-        
-        return {
-            "content": {"text": text_content, "tool_calls": tool_calls_result},
-            "cost_info": cost_info
-        }
+                agent_input_list.append(extraction_prompt)
+
+                if not agent_input_list: # Should not happen now
+                    agent_input_list.append("Extract information based on the provided context.")
+
+                system_instruction = (
+                    f"You are an expert data extraction assistant. Your task is to extract information "
+                    f"from the user's query and any provided context or files. Structure your response *strictly* "
+                    f"according to the following Pydantic model: '{pydantic_model_class.__name__}'. "
+                    f"Ensure all fields of the model are populated if the corresponding information is available. "
+                    f"If information for a field is not found, and the field is optional, you may omit it or set it to null. "
+                    f"Only output the Pydantic model instance as a JSON object, without any additional explanatory text or markdown."
+                )
+
+                # The AnthropicModel from pydantic-ai takes `model_name` and `provider`.
+                # The `provider` defaults to 'anthropic', which should pick up env variables for API key.
+                # It does not seem to take a `client` instance directly in its constructor.
+                # It will create its own AsyncAnthropic client.
+                anthropic_model_for_agent = AnthropicModel(
+                    model_name=self.model_name
+                    # provider can be specified if needed, but default 'anthropic' should work
+                )
+                agent = Agent(
+                    model=anthropic_model_for_agent,
+                    output_type=pydantic_model_class,
+                    system_prompt=system_instruction,
+                )
+                
+                result = agent.run_sync(agent_input_list)
+                model_instance = result.output
+
+                cost_info = {
+                    "tokens_used": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0,
+                    "warning": "Token usage data not available via pydantic_ai.Agent for Anthropic in this version."
+                }
+                return {
+                    "content": {"model_instance": model_instance, "text": None, "tool_calls": []},
+                    "cost_info": cost_info
+                }
+            else:
+                # Standard Anthropic API call
+                anthropic_messages = self._format_messages_for_anthropic(messages, file_content_data)
+                anthropic_tools = []
+                if tools_details_aihelper:
+                    for tool_schema in tools_details_aihelper:
+                        func_schema = tool_schema.get("function", {})
+                        anthropic_tools.append({
+                            "name": func_schema.get("name"),
+                            "description": func_schema.get("description"),
+                            "input_schema": func_schema.get("parameters")
+                        })
+                
+                api_params = {
+                    "model": self.model_name,
+                    "max_tokens": 4096, 
+                    "messages": anthropic_messages,
+                }
+                if system_prompt: api_params["system"] = system_prompt
+                if anthropic_tools: api_params["tools"] = anthropic_tools
+
+                response = self.client.messages.create(**api_params)
+                
+                text_content = None
+                tool_calls_result = []
+                for block in response.content:
+                    if block.type == "text":
+                        text_content = (text_content or "") + block.text
+                    elif block.type == "tool_use":
+                        tool_calls_result.append({
+                            "id": block.id, "type": "function",
+                            "function": {"name": block.name, "arguments": json.dumps(block.input if block.input is not None else {})}
+                        })
+                
+                if response.usage:
+                    prompt_tokens = response.usage.input_tokens
+                    completion_tokens = response.usage.output_tokens
+                    total_tokens = prompt_tokens + completion_tokens
+                    cost_info = {"tokens_used": total_tokens, "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "cost": 0}
+                    if self.cost_tracker:
+                        calculated_cost = self.cost_tracker.calculate_cost(self.model_name, prompt_tokens, completion_tokens)
+                        if calculated_cost is not None: cost_info["cost"] = calculated_cost
+                
+                return {"content": {"text": text_content, "tool_calls": tool_calls_result}, "cost_info": cost_info}
+
+        except APIError as e:
+            print(f"Anthropic API Error: {e}")
+            return {"content": {"text": f"Anthropic API Error: {e}", "model_instance": None, "tool_calls": []}, "cost_info": None}
+        except Exception as e:
+            print(f"Error during AnthropicAdapter process: {e}")
+            return {"content": {"text": f"Adapter processing error: {e}", "model_instance": None, "tool_calls": []}, "cost_info": None}

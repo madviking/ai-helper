@@ -26,8 +26,8 @@ Please implement the full functionality as outlined in this document. Success is
 
 ### Notes about this branch
 Model:        Gemini-2.5-preview
-Total cost:   
-Wall time:    
+Total cost:   $28.4
+Wall time:    Some hours
 
 #### Development flow with Cline:
 - **[prompt]** "please read README.md and proceed with the full implementation of this project.
@@ -51,4 +51,5 @@ Wall time:
 5) adapters should return a pydantic model. I suggest we create a base model where we put cost tracking as a separate pydantic submodel. If all pydantic models extend from this base class, we can have all runtime info available through the models. 
 6) Fill calculation etc. could be done there also
 - **[prompt]** stopped couple of times to ask for examples from PydanticAI documentation and genai toolkit. Provided raw copy+paste of the examples.
-  - **[cost]** $2.5
+- **[observation]** Gemini's reasoning seems more sensible than Grok-3 and Opus-4. It also asks the most relevant questions and keeps going longer without needing input. It was also the only model that I saw checking functionality from the actual packages inside venv.
+  - **[cost]** $15.1

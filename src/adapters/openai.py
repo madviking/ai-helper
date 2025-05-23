@@ -150,14 +150,32 @@ class OpenAIAdapter(BaseAdapter):
                                 agent_input_list.append(content_part["text"])
                             # ImageUrl is handled by BinaryContent above if it's from file_content_data
                             # If ImageUrl was part of messages directly, it would need handling here.
+                
+                # Add a specific instruction for Pydantic model extraction
+                extraction_prompt = (
+                    f"Based on the preceding context and any provided files, "
+                    f"extract the information and structure it strictly according to the '{pydantic_model_class.__name__}' Pydantic model. "
+                    f"Ensure all fields are populated if information is available. "
+                    f"If information for a field is not available, omit it or set it to null if the field is optional."
+                )
+                agent_input_list.append(extraction_prompt)
 
-                if not agent_input_list: # Ensure there's at least a default prompt
+                if not agent_input_list: # Should not happen now
                     agent_input_list.append("Extract information based on the provided context.")
 
+                system_instruction = (
+                    f"You are an expert data extraction assistant. Your task is to extract information "
+                    f"from the user's query and any provided context or files. Structure your response *strictly* "
+                    f"according to the following Pydantic model: '{pydantic_model_class.__name__}'. "
+                    f"Ensure all fields of the model are populated if the corresponding information is available. "
+                    f"If information for a field is not found, and the field is optional, you may omit it or set it to null. "
+                    f"Only output the Pydantic model instance as a JSON object, without any additional explanatory text or markdown."
+                )
 
                 agent = Agent(
                     agent_model_identifier, 
                     output_type=pydantic_model_class,
+                    system_prompt=system_instruction,
                 )
                 
                 result = agent.run_sync(agent_input_list) 
