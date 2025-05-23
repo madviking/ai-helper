@@ -52,3 +52,6 @@ src/
     
 example.py
 
+### Notes about this branch
+
+This branch was implemented with Cline + Gemini Flash 2.5-preview. Total cost of implementation was roughly $2 USD. Scaffolding branch contains the initial starting point.

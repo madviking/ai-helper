@@ -76,20 +76,44 @@ class AiHelper:
              self._track_cost({"cost": 0.0, "output_tokens": 0, "model": self.model_identifier})
 
 
-        # Handle tool calls if present
+        # Handle tool calls if present and tools were requested
         if tool_calls and tools: # Only execute tools if they were requested
             tool_results = {}
+            # Initialize messages here to avoid NameError
+            messages_with_tool_results = [{"role": "user", "content": prompt}] if prompt else []
+
+
             for tool_call in tool_calls:
+                tool_call_id = tool_call.get("id")
                 tool_name = tool_call.get("name")
                 tool_args = tool_call.get("args", {})
-                if tool_name and tool_name in tools: # Check if the tool is in the allowed list
+
+                if tool_name and tool_name in self.available_tools: # Check if the tool is available
+                    print(f"Executing tool: {tool_name} with args {tool_args}")
                     result = self._execute_tool(tool_name, tool_args)
                     tool_results[tool_name] = result
-                else:
-                    tool_results[tool_name] = f"Error: Tool '{tool_name}' not requested or not found."
-            # TODO: Potentially send tool_results back to the LLM via the adapter for a follow-up response
 
-            # For now, return the tool results
+                    # Add tool output to messages for a potential follow-up API call
+                    messages_with_tool_results.append({
+                        "tool_call_id": tool_call_id,
+                        "role": "tool",
+                        "name": tool_name,
+                        "content": str(result) # Convert result to string for the message
+                    })
+                else:
+                    error_message = f"Error: Tool '{tool_name}' not found or not requested."
+                    tool_results[tool_name] = error_message
+                    messages_with_tool_results.append({
+                         "tool_call_id": tool_call_id,
+                         "role": "tool",
+                         "name": tool_name,
+                         "content": error_message
+                    })
+
+            # TODO: Make a follow-up API call with messages_with_tool_results if needed
+            # This would involve calling self.adapter.process again with the updated messages
+            # and handling the new response. For now, we just return the tool results.
+
             return {"tool_results": tool_results}
 
 
@@ -134,8 +158,47 @@ class AiHelper:
         if tool_name in self.available_tools:
             tool_func = self.available_tools[tool_name]["func"]
             try:
-                # Assuming tool_args is a dictionary that can be passed as keyword arguments
-                return tool_func(**tool_args)
+                # Handle specific tool argument mapping if needed
+                if tool_name == "calculator":
+                    # Assuming tool_args for calculator is like {'operation': 'add', 'operands': [15, 7]}
+                    # Assuming tool_args for calculator is like {'operation': 'add', 'operands': [15, 7]} (OpenAI)
+                    # or {'equation': '8 * 9'} (OpenRouter)
+                    # Assuming tool_args for calculator is like {'operation': 'add', 'operands': [15, 7]} (OpenAI)
+                    # or {'operation': 'multiply', 'operand1': 8, 'operand2': 9} (OpenRouter)
+                    operation = tool_args.get("operation")
+                    operands = tool_args.get("operands")
+                    operand1 = tool_args.get("operand1")
+                    operand2 = tool_args.get("operand2")
+                    equation = tool_args.get("equation") # Keep for potential future formats
+
+                    if operation and isinstance(operands, list) and len(operands) >= 2:
+                        # Handle OpenAI format
+                        operator_map = {"add": "+", "subtract": "-", "multiply": "*", "divide": "/"}
+                        operator = operator_map.get(operation.lower())
+                        if operator:
+                            expression = f"{operands[0]} {operator} {operands[1]}" # Basic expression construction
+                            # TODO: Handle more than two operands
+                            return tool_func(expression)
+                        else:
+                            return f"Error executing calculator: Unsupported operation '{operation}'"
+                    elif operation and operand1 is not None and operand2 is not None:
+                         # Handle OpenRouter format
+                         operator_map = {"add": "+", "subtract": "-", "multiply": "*", "divide": "/"}
+                         operator = operator_map.get(operation.lower())
+                         if operator:
+                             expression = f"{operand1} {operator} {operand2}"
+                             return tool_func(expression)
+                         else:
+                             return f"Error executing calculator: Unsupported operation '{operation}'"
+                    elif equation:
+                        # Handle previous OpenRouter format if still encountered
+                        return tool_func(equation)
+                    else:
+                        return f"Error executing calculator: Invalid arguments {tool_args}"
+                # TODO: Add specific argument mapping for other tools if needed
+                else:
+                    # Assuming tool_args is a dictionary that can be passed as keyword arguments
+                    return tool_func(**tool_args)
             except Exception as e:
                 return f"Error executing tool '{tool_name}': {e}"
         else:
