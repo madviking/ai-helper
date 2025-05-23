@@ -37,6 +37,7 @@ Wall time:
 - **[observation]** Individual prompts with Google are very small. Looks like it is much better at either caching or splitting the work. Whereas Claude was using a huge amount of tokens, Gemini is keeping at $0.05 per prompt or so.
 - **[observation]** I'm super impressed how far we've got with just the base prompt and couple prompts mid-fly. Still without restarting.
 - **[prompt]** "google-generativeai has been deprecated and the latest library we use is google-genai. See this: https://github.com/googleapis/python-genai.
+- **[observation]** Unfortunately Google didn't handle situation well with info missing on its OWN latest sdk. 
   - **[cost]** $11.5
 
 
