@@ -30,6 +30,7 @@ Total cost:
 Wall time:    Too much... this thing is slow
 
 #### Development flow with Cline:
+- **[prompt]** "please read README.md and proceed with the full implementation of this project.
 - Started by implementing all the tests
   - **[cost]** $1.7
 - Somehow got stuck and after this each call cost more than 1.5$ per shot, restarted. 
