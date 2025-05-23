@@ -24,3 +24,13 @@ Please implement the full functionality as outlined in this document. Success is
 - When changing any methods, ALWAYS search for usages elsewhere.
 - To setup the project, run install.sh and then source venv/bin/activate
 
+### Notes about this branch
+Model:        Grok-3
+Total cost:   
+Wall time:    
+
+#### Development flow with Cline:
+- **[prompt]** "please read README.md and proceed with the full implementation of this project.
+- **[observation]** Started by implementing all the tests and part of the functionality. Tests are mostly bs.
+  - **[cost]** $2.5
+- **[prompt]** Please read README.md and continue with the full implementation of this project. Target is to be able to run "python -m example" without errors in addition to tests.
