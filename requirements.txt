@@ -11,3 +11,5 @@ rapidfuzz>=3.12.2
 requests>=2.32.3
 typer>=0.15.2
 google-genai # Replaced google-generativeai with google-genai
+pypdf>=3.0.0
+Pillow>=10.0.0

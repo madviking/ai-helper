@@ -1,7 +1,7 @@
-### Ai Helper
+## Ai Helper
 This is a simple ai helper to connect with openrouter, google, openai and openrouter. Input and output are always a pydantic model. Supports text, images and files and function calls.
 
-### Activating the environment
+#### Activating the environment
 Simply run install.sh and then do source venv/bin/activate
 
 #### LLM TASK 
@@ -24,3 +24,19 @@ Please implement the full functionality as outlined in this document. Success is
 - When changing any methods, ALWAYS search for usages elsewhere.
 - To setup the project, run install.sh and then source venv/bin/activate
 
+### Notes about this branch
+Model:        Claude Opus 4
+Total cost:   
+Wall time:    Too much... this thing is slow
+
+#### Development flow with Cline:
+- Started by implementing all the tests
+  - **[cost]** 1.7483$
+- Somehow got stuck and after this each call cost more than 1.5$ per shot, restarted. 
+  - **[cost]** Extra cost: $6.
+- **[prompt]** "please read README.md and proceed with the full implementation of this project. Tests are already implemented, so no need to check those for now. Also, install has been ran and you are currently in active venv session."
+- **[observation]** seems to be very consistent with implementation steps, moving from one file to another
+- **[observation]** hardcoded model info into adapters though there is a file we are pulling from openrouter (though this is not instructed, it can be inferred)
+- **[observation]** some calls were hitting already 1.5$ / req
+- **[observation]** forgot that we are supposed to operate inside venv
+- **[observation]** missed to abstract leading to code repetition between adapters

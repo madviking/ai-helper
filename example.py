@@ -2,6 +2,7 @@
 Testing suite for the AIHelper class.
 """
 
+from src.ai_helper import AIHelper
 from py_models.general_example_model import GeneralExampleModel
 from py_models.weather_model import WeatherModel
 
@@ -44,4 +45,3 @@ for model in models_to_test:
     result = ai_helper.ask("This is the test file we use. Key is 'dog' and value for that is 'Roger'", model=GeneralExampleModel)
     # result should be a GeneralExampleModel object
     print(result)
-
