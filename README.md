@@ -40,3 +40,7 @@ Wall time:
   - **[cost]** $7.3
 - **[observation]** So looks like the entire adapter implmenentation is missing, we only have mock data coming from there. No wonder it works so well...
 - **[prompt]** "please read README.md and continue with the full implementation of this project. At least the adapters implementation is missing entirely. You can leave the current mocking there, but please implement the adapters as well."
+- **[prompt]** "note, google-generativeai is deprecated. google-genai is the one we should use."
+  - **[cost]** $3.8
+- **[observation]** Reverted unsuccesful Google implementation. Restarting with a new prompt.
+- **[prompt]** "Please read README.md and continue with the full implementation of this project. The Google adapter is not working, please implement with google-genai https://github.com/googleapis/python-genai. Also, please implement the cost calculation as specified in cost_tracker.py. The tool calling is also missing (tools.py). Also see about errors when calling python -m example."

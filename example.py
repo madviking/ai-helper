@@ -8,7 +8,7 @@ from py_models.weather_model import WeatherModel
 from py_models.general_example_model import GeneralExampleModel
 
 # Initialize AiHelper with a model
-ai_helper = AiHelper('openrouter:openai/gpt-3.5-turbo')
+ai_helper = AiHelper('openrouter:openai/gpt-4o')
 
 # Define tools using actual implementations from src.tools
 from src.tools import calculator, weather, pdf_reader
@@ -20,7 +20,7 @@ ai_helper.add_tool(calculator_tool)
 ai_helper.add_tool(weather_tool)
 
 # Test with weather tool
-result = ai_helper.ask("What is the weather like today?", tools=[weather_tool], output_model=WeatherModel)
+result = ai_helper.ask("What is the weather like today in Sofia, Bulgaria?", tools=[weather_tool], output_model=WeatherModel)
 print("Weather result:", result)
 
 # List of models to test
@@ -29,8 +29,8 @@ models_to_test = [
     'openrouter:google/gemini-2.5-flash-preview-05-20',
     'anthropic:claude-3',
     'openrouter:anthropic/claude-3',
-    'openai:gpt-4',
-    'openrouter:openai/gpt-4',
+    'openai:gpt-4o',
+    'openrouter:openai/gpt-4o',
 ]
 
 for model in models_to_test:
