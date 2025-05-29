@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 import os
 
 from helpers.llm_info_provider import LLMInfoProvider
-from helpers.usage_tracker import UsageTracker
+from usage_tracking.tracker import UsageTracker, format_usage_data
 from helpers.config_helper import ConfigHelper
 from py_models.base import LLMReport
 

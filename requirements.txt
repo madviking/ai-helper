@@ -12,3 +12,4 @@ requests>=2.32.3
 typer>=0.15.2
 google-genai
 tabulate>=0.9.0
+sqlmodel>=0.0.8
